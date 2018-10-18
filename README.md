@@ -1,5 +1,7 @@
 # tarsplitter
 
+[Download latest release](https://github.com/AQUAOSOTech/tarsplitter/releases/latest)
+
 Safely split a large tar archive into a specified number of smaller tar archives.
 
 - `i` - input tar archive that you want to split
@@ -30,7 +32,6 @@ Processed files= 110000
 Processed files= 120000
 Done reading input archive
 All done
-
 ```
 
 ## Why
