@@ -48,6 +48,10 @@ func main() {
 	var contents []byte
 	filesProcessed := 0
 
+	var bytesBeforeWrite int64
+	var bytesAfterWrite int64
+	var tempInfo os.FileInfo
+
 	p, err := filepath.Abs(fmt.Sprintf("%s%d.tar", *output, newTarCounter))
 	if err != nil {
 		log.Fatal("Something is not quite right with the output path", err)
@@ -80,6 +84,8 @@ func main() {
 		}
 
 		// add the file from the original archive to the new archive
+		tempInfo, _ = newTarFile.Stat()
+		bytesBeforeWrite = tempInfo.Size()
 		if err := newTar.WriteHeader(info); err != nil {
 			log.Fatal("failed writing header between tars", err)
 		}
@@ -92,7 +98,10 @@ func main() {
 			fmt.Println("Processed files=", filesProcessed)
 		}
 
-		byteCounter += info.FileInfo().Size() + info.Size
+		tempInfo, _ = newTarFile.Stat()
+		bytesAfterWrite = tempInfo.Size()
+
+		byteCounter += bytesAfterWrite - bytesBeforeWrite
 
 		if byteCounter > partSizeBytes {
 			byteCounter = 0
