@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -14,6 +13,12 @@ import (
 var input = flag.String("i", "", "input tar file to be split")
 var output = flag.String("o", "", "output path")
 var partCount = flag.Int64("p", 4, "number of equal parts to split the tar file into")
+
+// fatal replaces fatal which does not print in some situations in prod
+func fatal(args ...interface{}) {
+	fmt.Println(args...)
+	os.Exit(0)
+}
 
 func main() {
 	flag.Parse()
@@ -25,15 +30,14 @@ func main() {
 
 	file, err := os.Open(*input)
 	if err != nil {
-		// handle the error here
-		return
+		fatal("Failed statting input", *input, err)
 	}
 	defer file.Close()
 
 	// get the file size
 	stat, err := file.Stat()
 	if err != nil {
-		log.Fatal("Failed statting input", *input, err)
+		fatal("Failed statting input", *input, err)
 	}
 
 	partSizeBytes := stat.Size() / *partCount
@@ -54,11 +58,11 @@ func main() {
 
 	p, err := filepath.Abs(fmt.Sprintf("%s%d.tar", *output, newTarCounter))
 	if err != nil {
-		log.Fatal("Something is not quite right with the output path", err)
+		fatal("Something is not quite right with the output path", err)
 	}
 	newTarFile, err := os.Create(p)
 	if err != nil {
-		log.Fatal("Failed opening new tar part", err)
+		fatal("Failed opening new tar part", err)
 	}
 	newTar := tar.NewWriter(newTarFile)
 	fmt.Println("First new archive is", newTarFile.Name())
@@ -86,15 +90,15 @@ func main() {
 		// add the file from the original archive to the new archive
 		tempInfo, _ = newTarFile.Stat()
 		bytesBeforeWrite = tempInfo.Size()
-		if err := newTar.WriteHeader(info); err != nil {
-			log.Fatal("failed writing header between tars", err)
+		if err = newTar.WriteHeader(info); err != nil {
+			fatal("failed writing header between tars", err)
 		}
-		if _, err := newTar.Write(contents); err != nil {
-			log.Fatal("failed writing file body between tars", err)
+		if _, err = newTar.Write(contents); err != nil {
+			fatal("failed writing file body between tars", err)
 		}
 
 		filesProcessed++
-		if filesProcessed % 10000 == 0 {
+		if filesProcessed%10000 == 0 {
 			fmt.Println("Processed files=", filesProcessed)
 		}
 
@@ -109,19 +113,19 @@ func main() {
 
 			err = newTar.Close()
 			if err != nil {
-				log.Fatal("failed closing tar writer", err)
+				fatal("failed closing tar writer", err)
 			}
 			err = newTarFile.Close()
 			if err != nil {
-				log.Fatal("failed closing tar file", err)
+				fatal("failed closing tar file", err)
 			}
 			p, err = filepath.Abs(fmt.Sprintf("%s%d.tar", *output, newTarCounter))
 			if err != nil {
-				log.Fatal("new archive output path failed to initialize", err)
+				fatal("new archive output path failed to initialize", err)
 			}
 			newTarFile, err = os.Create(p)
 			if err != nil {
-				log.Fatal("Failed opening new tar part", err)
+				fatal("Failed opening new tar part", err)
 			}
 			newTar = tar.NewWriter(newTarFile)
 
