@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -49,7 +48,6 @@ func main() {
 	newTarCounter := 0
 	var byteCounter int64
 	tr := tar.NewReader(file)
-	var contents []byte
 	filesProcessed := 0
 
 	var bytesBeforeWrite int64
@@ -81,19 +79,13 @@ func main() {
 			os.Exit(1)
 		}
 
-		contents, err = ioutil.ReadAll(tr)
-		if err != nil {
-			fmt.Println("failed while reading from original archive", info.Name, err)
-			continue
-		}
-
 		// add the file from the original archive to the new archive
 		tempInfo, _ = newTarFile.Stat()
 		bytesBeforeWrite = tempInfo.Size()
 		if err = newTar.WriteHeader(info); err != nil {
 			fatal("failed writing header between tars", err)
 		}
-		if _, err = newTar.Write(contents); err != nil {
+		if _, err = io.Copy(newTar, tr); err != nil {
 			fatal("failed writing file body between tars", err)
 		}
 
