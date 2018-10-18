@@ -48,7 +48,7 @@ Worse, `split` won't keep all the files intact. Files will be split on the line,
 ## Contributors
 
 - [AQUAOSO Technologies, PBC](https://aquaoso.com)
-- [Jeff Parrish](/ruffrey)
+- [Jeff Parrish](https://github.com/ruffrey)
 
 ## MIT License
 
