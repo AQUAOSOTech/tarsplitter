@@ -12,19 +12,19 @@ tarsplitter -i archive.tar -o /tmp/archive-parts -p 4
 
 ```
 archive.tar is 529479680 bytes, splitting into 4 parts of 132369920 bytes
-First new archive is /tmp/archive-parts.0.tar
+First new archive is /tmp/archive-parts0.tar
 Processed files= 10000
 Processed files= 20000
 Processed files= 30000
-Initialized next tar archive /tmp/archive-parts.1.tar
+Initialized next tar archive /tmp/archive-parts1.tar
 Processed files= 40000
 Processed files= 50000
 Processed files= 60000
-Initialized next tar archive /tmp/archive-parts.2.tar
+Initialized next tar archive /tmp/archive-parts2.tar
 Processed files= 70000
 Processed files= 80000
 Processed files= 90000
-Initialized next tar archive /tmp/archive-parts.3.tar
+Initialized next tar archive /tmp/archive-parts3.tar
 Processed files= 100000
 Processed files= 110000
 Processed files= 120000
@@ -48,7 +48,7 @@ Worse, `split` won't keep all the files intact. Files will be split on the line,
 ## Contributors
 
 - [AQUAOSO Technologies, PBC](https://aquaoso.com)
-- [Jeff Parrish](/ruffrey)
+- [Jeff Parrish](https://github.com/ruffrey)
 
 ## MIT License
 
