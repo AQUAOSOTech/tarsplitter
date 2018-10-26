@@ -5,9 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -15,10 +17,13 @@ var input = flag.String("i", "", "input archive file for splitting, OR input dir
 var command = flag.String("m", "split", "input mode command - must be 'split' or 'archive'")
 var output = flag.String("o", "", "output path or folder")
 var partCount = flag.Int64("p", 4, "number of parts to split the archive into, or number of threads when archiving")
+var fileList = flag.String("f", "", "optional list of files instead of input for archiving")
 
 func fatalIf(err error, args ...interface{}) {
 	if err != nil {
-		fmt.Println(args...)
+		fmt.Print(err)
+		fmt.Print(args...)
+		fmt.Print("\n")
 		os.Exit(1)
 	}
 }
@@ -133,25 +138,33 @@ func doSplit() {
 const tarEndByteSpace = 1024
 
 func doArchive() {
-	if *input == "" || *partCount <= 0 {
+	if (*input == "" && *fileList == "") || *partCount <= 0 {
 		fmt.Println("archive creates a tar archive using multithreading tricks")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
 	var matches []string
-	var lm int
-	// we must walk the directory, because Glob() fails at millions of files - "argument list too long"
-	archiveErr := filepath.Walk(*input, func(path string, info os.FileInfo, err error) error {
-		fatalIf(err, "walk failure", path)
-		matches = append(matches, path)
-		lm = len(matches)
-		if lm % 100000 == 0 {
-			fmt.Println("walking dir at", lm)
-		}
-		return nil
-	})
-	fatalIf(archiveErr, "tarsplitter walking input directory", *input)
+	if *fileList != "" {
+		matchText, err := ioutil.ReadFile(*fileList)
+		fatalIf(err)
+		matches = strings.Split(string(matchText), "\n")
+	} else {
+		var lm int
+		// we must walk the directory, because Glob() fails at millions of files - "argument list too long"
+		archiveErr := filepath.Walk(*input, func(path string, info os.FileInfo, err error) error {
+			fatalIf(err, "walk failure", path)
+			matches = append(matches, path)
+			lm = len(matches)
+			if lm % 100000 == 0 {
+				fmt.Println("walking dir at", lm)
+			}
+			return nil
+		})
+		fatalIf(archiveErr, "tarsplitter walking input directory", *input)
+		matchFileSaveText := []byte(strings.Join(matches, "\n"))
+		fatalIf(ioutil.WriteFile(*output + ".txt", matchFileSaveText, os.ModePerm))
+	}
 
 	// open final file early so we don't realize it is a bad path after doing a bunch of work
 	finalFile, archiveErr := os.Create(*output)
@@ -189,7 +202,16 @@ func doArchive() {
 
 			fmt.Println("Now writing", len(fileList), "files to", tarPath)
 
+			var lastChar string
 			for _, filename := range fileList {
+				if filename == "" || filename == "." {
+					continue
+				}
+				lastChar = filename[len(filename)-1:]
+				if lastChar == "/" || lastChar == "\\" {
+					fmt.Println("skipping", filename, tarPath)
+					continue
+				}
 				file, err = os.Open(filename)
 				fatalIf(err, "failed opening read file", tarPath, filename)
 
