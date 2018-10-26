@@ -2,14 +2,14 @@
 
 [Download latest release](https://github.com/AQUAOSOTech/tarsplitter/releases/latest)
 
-Safely split a large tar archive into a specified number of smaller tar archives.
+Safely split a large tar archive into a specified number of smaller tar archives, or make a tar archive in a multithreaded manner.
 
-- `i` - input tar archive that you want to split
-- `o` - output path
-- `p` - number of smaller archives to split the input archive into
+- `i` - split: input tar archive that you want to split. archive: input glob
+- `o` - output pattern
+- `p` - split: number of smaller archives to split the input archive into
 
 ```
-tarsplitter -i archive.tar -o /tmp/archive-parts -p 4
+tarsplitter -m split -i archive.tar -o /tmp/archive-parts -p 4
 ```
 
 ```
@@ -34,6 +34,12 @@ Done reading input archive
 All done
 ```
 
+Multitheaded archiving:
+
+```
+tarsplitter -m archive -i folder/ -o archive.tar
+```
+
 ## Why
 
 It is possible to split large files, such as tar archives, into parts using the `split` utility. But you need to do a little work to precompute the byte split if you want a specific number of sub-files.
@@ -45,6 +51,8 @@ split -b 100m archive.tar
 Worse, `split` won't keep all the files intact. Files will be split on the line, right near byte split, span archives, possibly making the archive unusable.
 
 `tarsplitter` will not leave any broken files between the split archives.
+
+Also, it can be very slow to archive millions of small files. The `tarsplitter -m archive` mode will use all of your cores to create a tar archive, rather than the single threaded regular `tar` command. 
 
 ## Contributors
 

@@ -5,22 +5,44 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
+	"math"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
-var input = flag.String("i", "", "input tar file to be split")
-var output = flag.String("o", "", "output path")
-var partCount = flag.Int64("p", 4, "number of equal parts to split the tar file into")
+var input = flag.String("i", "", "input file or folder")
+var command = flag.String("m", "split", "input mode command - must be 'split' or 'archive'")
+var output = flag.String("o", "", "output path or folder")
+var partCount = flag.Int64("p", 4, "number of parts to split the archive into, or number of threads when archiving")
 
-// fatal replaces fatal which does not print in some situations in prod
 func fatal(args ...interface{}) {
 	fmt.Println(args...)
-	os.Exit(0)
+	os.Exit(1)
+}
+
+func helpCommand() {
+	fmt.Println("first argument must be 'split' or 'archive'")
+	flag.PrintDefaults()
+	os.Exit(1)
 }
 
 func main() {
 	flag.Parse()
+
+	if *command == "split" {
+		doSplit()
+	} else if *command == "archive" {
+		doArchive()
+	} else {
+		helpCommand()
+	}
+
+	fmt.Println("All done")
+}
+
+func doSplit() {
 	if *input == "" || *partCount <= 0 {
 		fmt.Println("splitter splits a tar archive into approximately equal parts")
 		flag.PrintDefaults()
@@ -124,6 +146,128 @@ func main() {
 			fmt.Println("Initialized next tar archive", newTarFile.Name())
 		}
 	}
+}
 
-	fmt.Println("All done")
+func doArchive() {
+	if *input == "" || *partCount <= 0 {
+		fmt.Println("archive creates a tar archive using multithreading tricks")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	matches, archiveErr := filepath.Glob(*input)
+	if archiveErr != nil {
+		fatal("Failed statting input", *input, archiveErr)
+	}
+
+	// open final file early so we don't realize it is a bad path after doing a bunch of work
+	finalFile, archiveErr := os.Create(*output)
+	if archiveErr != nil {
+		fatal("failed creating final archive", *output, archiveErr)
+	}
+	archiveErr = finalFile.Close()
+	if archiveErr != nil {
+		fatal("failed pre-closing final archive", *output, archiveErr)
+	}
+	// appendonly for speed
+	finalFile, archiveErr = os.OpenFile(*output, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if archiveErr != nil {
+		fatal("Failed opening final archive input", *output, finalFile, archiveErr)
+	}
+	defer finalFile.Close()
+
+	fmt.Println("matched", len(matches), "files")
+
+	var tempTarPaths []string
+	for i := 0; i < int(*partCount); i++ {
+		tempTarPaths = append(tempTarPaths, fmt.Sprintf("%s%d.tar", *output, i))
+	}
+	var fileGroups [][]string
+	perGroup := int64(math.Ceil(float64(len(matches)) / float64(*partCount)))
+	var f int64 = 0
+	for i := 0; i < int(*partCount); i++ {
+		end := int(math.Min(float64(len(matches)), float64((perGroup*int64(i))+perGroup)))
+		fg := matches[f:end]
+		fileGroups = append(fileGroups, fg)
+		f += perGroup
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(fileGroups); i++ {
+		wg.Add(1)
+		go func(fileList []string, tarPath string) {
+			var err error
+			var file *os.File
+			var stats os.FileInfo
+			var hdr *tar.Header
+			newTarFile, err := os.Create(tarPath)
+			if err != nil {
+				fatal("failed creating tar file", tarPath, err)
+			}
+			newTar := tar.NewWriter(newTarFile)
+			fmt.Println("Now writing", len(fileList), "files to", tarPath)
+			for _, filename := range fileList {
+				file, err = os.Open(filename)
+				if err != nil {
+					fatal("failed opening read file", tarPath, filename, err)
+				}
+				stats, err = file.Stat()
+				if err != nil {
+					fatal("failed statting open file", tarPath, filename, err)
+				}
+				hdr = &tar.Header{
+					Name: file.Name(),
+					Mode: int64(stats.Mode()),
+					Size: stats.Size(),
+				}
+				if err = newTar.WriteHeader(hdr); err != nil {
+					fatal("failed writing header between tars", tarPath, filename, err)
+				}
+				if _, err = io.Copy(newTar, file); err != nil {
+					fatal("failed writing file body to tar", tarPath, filename, err)
+				}
+
+				err = file.Close()
+				if err != nil {
+					fatal("failed closing read file", tarPath, filename, err)
+				}
+			}
+			err = newTar.Close()
+			if err != nil {
+				fatal("did not close tar writer", tarPath, err)
+			}
+			newTarFile.Close()
+			if err != nil {
+				fatal("did not close tar file", tarPath, err)
+			}
+			wg.Done()
+		}(fileGroups[i], tempTarPaths[i])
+	}
+
+	wg.Wait()
+
+	fmt.Println("created separate archives - now combining")
+
+	for i := 0; i < int(*partCount); i++ {
+		inName := tempTarPaths[i]
+		in, err := os.Open(inName)
+		if err != nil {
+			fatal("failed to open input archive file for reading", inName, err)
+		}
+
+		n, err := io.Copy(finalFile, in)
+		if err != nil {
+			log.Fatalln("failed to append input archive to final", inName, err)
+		}
+		log.Printf("wrote %d bytes of %s\n", n, inName)
+
+		// Delete the old input file
+		err = in.Close()
+		if err != nil {
+			fatal("failed closing input tmp archive", err)
+		}
+		//if err := os.Remove(inName); err != nil {
+		//	log.Fatalln("failed to remove", inName)
+		//}
+	}
 }
