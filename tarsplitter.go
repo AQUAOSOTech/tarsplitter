@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -17,9 +16,11 @@ var command = flag.String("m", "split", "input mode command - must be 'split' or
 var output = flag.String("o", "", "output path or folder")
 var partCount = flag.Int64("p", 4, "number of parts to split the archive into, or number of threads when archiving")
 
-func fatal(args ...interface{}) {
-	fmt.Println(args...)
-	os.Exit(1)
+func fatalIf(err error, args ...interface{}) {
+	if err != nil {
+		fmt.Println(args...)
+		os.Exit(1)
+	}
 }
 
 func helpCommand() {
@@ -50,16 +51,12 @@ func doSplit() {
 	}
 
 	file, err := os.Open(*input)
-	if err != nil {
-		fatal("Failed statting input", *input, err)
-	}
+	fatalIf(err, "Failed statting input", *input)
 	defer file.Close()
 
 	// get the file size
 	stat, err := file.Stat()
-	if err != nil {
-		fatal("Failed statting input", *input, err)
-	}
+	fatalIf(err, "Failed statting input", *input)
 
 	partSizeBytes := stat.Size() / *partCount
 	fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into", *partCount, "parts of",
@@ -76,14 +73,10 @@ func doSplit() {
 	var bytesAfterWrite int64
 	var tempInfo os.FileInfo
 
-	p, err := filepath.Abs(fmt.Sprintf("%s%d.tar", *output, newTarCounter))
-	if err != nil {
-		fatal("Something is not quite right with the output path", err)
-	}
-	newTarFile, err := os.Create(p)
-	if err != nil {
-		fatal("Failed opening new tar part", err)
-	}
+	nextArchive, err := filepath.Abs(fmt.Sprintf("%s%d.tar", *output, newTarCounter))
+		fatalIf(err, "Something is not quite right with the output path")
+	newTarFile, err := os.Create(nextArchive)
+	fatalIf(err, "Failed opening new tar part", newTarFile)
 	newTar := tar.NewWriter(newTarFile)
 	fmt.Println("First new archive is", newTarFile.Name())
 
@@ -95,21 +88,17 @@ func doSplit() {
 			newTarFile.Close()
 			break // End of archive
 		}
-		if err != nil {
-			fmt.Println("Critical failure while reading tar file")
-			fmt.Println(err)
-			os.Exit(1)
-		}
+		fatalIf(err, "Critical failure while reading tar file")
 
 		// add the file from the original archive to the new archive
 		tempInfo, _ = newTarFile.Stat()
 		bytesBeforeWrite = tempInfo.Size()
-		if err = newTar.WriteHeader(info); err != nil {
-			fatal("failed writing header between tars", err)
-		}
-		if _, err = io.Copy(newTar, tr); err != nil {
-			fatal("failed writing file body between tars", err)
-		}
+		err = newTar.WriteHeader(info)
+		fatalIf(err, "failed writing header between tars")
+
+		// write from the reader
+		_, err = io.Copy(newTar, tr)
+		fatalIf(err, "failed writing file body between tars")
 
 		filesProcessed++
 		if filesProcessed%10000 == 0 {
@@ -125,28 +114,24 @@ func doSplit() {
 			byteCounter = 0
 			newTarCounter++
 
-			err = newTar.Close()
-			if err != nil {
-				fatal("failed closing tar writer", err)
-			}
-			err = newTarFile.Close()
-			if err != nil {
-				fatal("failed closing tar file", err)
-			}
-			p, err = filepath.Abs(fmt.Sprintf("%s%d.tar", *output, newTarCounter))
-			if err != nil {
-				fatal("new archive output path failed to initialize", err)
-			}
-			newTarFile, err = os.Create(p)
-			if err != nil {
-				fatal("Failed opening new tar part", err)
-			}
+			fatalIf(newTar.Close())
+			fatalIf(newTarFile.Close())
+
+			nextPath := fmt.Sprintf("%s%d.tar", *output, newTarCounter)
+			nextArchive, err = filepath.Abs(nextPath)
+			fatalIf(err, "new archive output path failed to initialize", nextPath)
+
+			newTarFile, err = os.Create(nextArchive)
+			fatalIf(err, "Failed opening new tar part", nextPath)
+
 			newTar = tar.NewWriter(newTarFile)
 
 			fmt.Println("Initialized next tar archive", newTarFile.Name())
 		}
 	}
 }
+
+const tarEndByteSpace = 1024
 
 func doArchive() {
 	if *input == "" || *partCount <= 0 {
@@ -156,24 +141,11 @@ func doArchive() {
 	}
 
 	matches, archiveErr := filepath.Glob(*input)
-	if archiveErr != nil {
-		fatal("Failed statting input", *input, archiveErr)
-	}
+	fatalIf(archiveErr, "Failed statting input", *input)
 
 	// open final file early so we don't realize it is a bad path after doing a bunch of work
 	finalFile, archiveErr := os.Create(*output)
-	if archiveErr != nil {
-		fatal("failed creating final archive", *output, archiveErr)
-	}
-	archiveErr = finalFile.Close()
-	if archiveErr != nil {
-		fatal("failed pre-closing final archive", *output, archiveErr)
-	}
-	// appendonly for speed
-	finalFile, archiveErr = os.OpenFile(*output, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-	if archiveErr != nil {
-		fatal("Failed opening final archive input", *output, finalFile, archiveErr)
-	}
+	fatalIf(archiveErr, "failed creating final archive", *output, archiveErr)
 	defer finalFile.Close()
 
 	fmt.Println("matched", len(matches), "files")
@@ -201,45 +173,35 @@ func doArchive() {
 			var stats os.FileInfo
 			var hdr *tar.Header
 			newTarFile, err := os.Create(tarPath)
-			if err != nil {
-				fatal("failed creating tar file", tarPath, err)
-			}
+			fatalIf(err, "failed creating tar file", tarPath)
+
 			newTar := tar.NewWriter(newTarFile)
+
 			fmt.Println("Now writing", len(fileList), "files to", tarPath)
+
 			for _, filename := range fileList {
 				file, err = os.Open(filename)
-				if err != nil {
-					fatal("failed opening read file", tarPath, filename, err)
-				}
+				fatalIf(err, "failed opening read file", tarPath, filename)
+
 				stats, err = file.Stat()
-				if err != nil {
-					fatal("failed statting open file", tarPath, filename, err)
-				}
+				fatalIf(err, "failed statting open file", tarPath, filename)
 				hdr = &tar.Header{
 					Name: file.Name(),
 					Mode: int64(stats.Mode()),
 					Size: stats.Size(),
 				}
-				if err = newTar.WriteHeader(hdr); err != nil {
-					fatal("failed writing header between tars", tarPath, filename, err)
-				}
-				if _, err = io.Copy(newTar, file); err != nil {
-					fatal("failed writing file body to tar", tarPath, filename, err)
-				}
+				err = newTar.WriteHeader(hdr)
+				fatalIf(err, "failed writing header between tars", tarPath, filename)
 
-				err = file.Close()
-				if err != nil {
-					fatal("failed closing read file", tarPath, filename, err)
-				}
+				_, err = io.Copy(newTar, file)
+				fatalIf(err, "failed writing file body to tar", tarPath, filename)
+
+				fatalIf(file.Close())
 			}
-			err = newTar.Close()
-			if err != nil {
-				fatal("did not close tar writer", tarPath, err)
-			}
-			newTarFile.Close()
-			if err != nil {
-				fatal("did not close tar file", tarPath, err)
-			}
+
+			fatalIf(newTar.Close())
+			fatalIf(newTarFile.Close())
+
 			wg.Done()
 		}(fileGroups[i], tempTarPaths[i])
 	}
@@ -248,26 +210,26 @@ func doArchive() {
 
 	fmt.Println("created separate archives - now combining")
 
+	var byteCount int64 = 0
 	for i := 0; i < int(*partCount); i++ {
 		inName := tempTarPaths[i]
 		in, err := os.Open(inName)
-		if err != nil {
-			fatal("failed to open input archive file for reading", inName, err)
-		}
+		fatalIf(err, "failed to open input archive file for reading", inName)
 
 		n, err := io.Copy(finalFile, in)
-		if err != nil {
-			log.Fatalln("failed to append input archive to final", inName, err)
-		}
-		log.Printf("wrote %d bytes of %s\n", n, inName)
+		fatalIf(err, "failed to append input archive to final", inName)
+		// the tar spec has a bunch of empty bytes signifying the end of the archive, so we
+		// want to remove those before writing the next archive
+		byteCount += n
+		fmt.Printf("wrote %d bytes of %s\n", n, inName)
+		byteCount -= tarEndByteSpace // go back
+		fatalIf(finalFile.Truncate(byteCount))
+		fatalIf(finalFile.Sync())
+		_, err = finalFile.Seek(0, 2) // put cursor back at the end
+		fatalIf(err)
 
 		// Delete the old input file
-		err = in.Close()
-		if err != nil {
-			fatal("failed closing input tmp archive", err)
-		}
-		//if err := os.Remove(inName); err != nil {
-		//	log.Fatalln("failed to remove", inName)
-		//}
+		fatalIf(in.Close())
+		fatalIf(os.Remove(inName))
 	}
 }

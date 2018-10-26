@@ -2,17 +2,19 @@
 
 [Download latest release](https://github.com/AQUAOSOTech/tarsplitter/releases/latest)
 
-Safely split a large tar archive into a specified number of smaller tar archives, or make a tar archive in a multithreaded manner.
+Work with huge numbers of small files more quickly.
 
-- `i` - split: input tar archive that you want to split. archive: input glob
+1. Safely split a large tar archive into a specified number of smaller tar archives
+
+- `i` - input tar archive that you want to split
 - `o` - output pattern
-- `p` - split: number of smaller archives to split the input archive into
+- `p` - number of smaller archives to split the input archive into
 
-```
+```bash
 tarsplitter -m split -i archive.tar -o /tmp/archive-parts -p 4
 ```
 
-```
+```text
 archive.tar is 529479680 bytes, splitting into 4 parts of 132369920 bytes
 First new archive is /tmp/archive-parts0.tar
 Processed files= 10000
@@ -34,13 +36,19 @@ Done reading input archive
 All done
 ```
 
-Multitheaded archiving:
+2. Multitheaded Archiving
+
+- `i` - input file matching pattern
+- `o` - output tar file path
+- `p` - number of threads or files to read at once. `-p 10` will read up to 10 files from disk at a time
 
 ```
-tarsplitter -m archive -i folder/ -o archive.tar
+tarsplitter -m archive -i folder/*.json -o archive.tar
 ```
 
 ## Why
+
+##### Splitting huge archives can be slow
 
 It is possible to split large files, such as tar archives, into parts using the `split` utility. But you need to do a little work to precompute the byte split if you want a specific number of sub-files.
 
@@ -52,7 +60,9 @@ Worse, `split` won't keep all the files intact. Files will be split on the line,
 
 `tarsplitter` will not leave any broken files between the split archives.
 
-Also, it can be very slow to archive millions of small files. The `tarsplitter -m archive` mode will use all of your cores to create a tar archive, rather than the single threaded regular `tar` command. 
+##### Archiving lots of small files can be slow
+
+It can be very slow to archive millions of small files. The `tarsplitter -m archive` mode will use as many cores as you want to create a tar archive, rather than the single threaded regular `tar` command.
 
 ## Contributors
 
