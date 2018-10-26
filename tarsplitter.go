@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-var input = flag.String("i", "", "input file or folder")
+var input = flag.String("i", "", "input archive file for splitting, OR input directory for archiving")
 var command = flag.String("m", "split", "input mode command - must be 'split' or 'archive'")
 var output = flag.String("o", "", "output path or folder")
 var partCount = flag.Int64("p", 4, "number of parts to split the archive into, or number of threads when archiving")
@@ -24,7 +24,6 @@ func fatalIf(err error, args ...interface{}) {
 }
 
 func helpCommand() {
-	fmt.Println("first argument must be 'split' or 'archive'")
 	flag.PrintDefaults()
 	os.Exit(1)
 }
@@ -140,8 +139,19 @@ func doArchive() {
 		os.Exit(1)
 	}
 
-	matches, archiveErr := filepath.Glob(*input)
-	fatalIf(archiveErr, "Failed statting input", *input)
+	var matches []string
+	var lm int
+	// we must walk the directory, because Glob() fails at millions of files - "argument list too long"
+	archiveErr := filepath.Walk(*input, func(path string, info os.FileInfo, err error) error {
+		fatalIf(err, "walk failure", path)
+		matches = append(matches, path)
+		lm = len(matches)
+		if lm % 100000 == 0 {
+			fmt.Println("walking dir at", lm)
+		}
+		return nil
+	})
+	fatalIf(archiveErr, "tarsplitter walking input directory", *input)
 
 	// open final file early so we don't realize it is a bad path after doing a bunch of work
 	finalFile, archiveErr := os.Create(*output)
