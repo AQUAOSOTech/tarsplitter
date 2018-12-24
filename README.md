@@ -4,7 +4,9 @@
 
 Work with huge numbers of small files more quickly.
 
-1. Safely split a large tar archive into a specified number of smaller tar archives
+## Usage
+
+### 1. Safely split a large tar archive into a specified number of smaller tar archives
 
 - `i` - input tar archive that you want to split
 - `o` - output pattern
@@ -36,7 +38,9 @@ Done reading input archive
 All done
 ```
 
-2. Multitheaded Archiving
+### 2. Multitheaded Archiving
+
+Create a tar archive using `-p` concurrent threads.
 
 - `i` - input file matching pattern
 - `o` - output tar file path
