@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"github.com/c2h5oh/datasize"
 )
 
 var input = flag.String("i", "", "input archive file for splitting, OR input directory for archiving")
@@ -18,6 +19,8 @@ var command = flag.String("m", "split", "input mode command - must be 'split' or
 var output = flag.String("o", "", "output path or folder")
 var partCount = flag.Int64("p", 4, "number of parts to split the archive into, or number of threads when archiving")
 var fileList = flag.String("f", "", "optional list of files instead of input for archiving")
+var partSize = flag.String("s", "", "approximate size of each part, e.g. '100MB', '4G'")
+
 
 func fatalIf(err error, args ...interface{}) {
 	if err != nil {
@@ -54,17 +57,38 @@ func doSplit() {
 		os.Exit(1)
 	}
 
-	file, err := os.Open(*input)
-	fatalIf(err, "Failed statting input", *input)
-	defer file.Close()
+	var file *os.File
+	var err error
+	var partSizeBytes int64
 
-	// get the file size
-	stat, err := file.Stat()
-	fatalIf(err, "Failed statting input", *input)
+	var size datasize.ByteSize
+	_ = size.UnmarshalText([]byte(*partSize))
+	partSizeBytes = int64(size.Bytes())
 
-	partSizeBytes := stat.Size() / *partCount
-	fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into", *partCount, "parts of",
-		partSizeBytes, "bytes")
+	if partSizeBytes == 0 {
+		partSizeBytes = math.MaxInt64
+	}
+
+	if *input == "-" {
+		file = os.Stdin
+	} else {
+		file, err = os.Open(*input)
+		fatalIf(err, "Failed statting input", *input)
+		defer file.Close()
+
+		// get the file size
+		stat, err := file.Stat()
+		fatalIf(err, "Failed statting input", *input)
+
+		if *partSize == "" {
+			partSizeBytes = stat.Size() / *partCount
+			fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into", *partCount, "parts of",
+				partSizeBytes, "bytes")
+		} else {
+			fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into archives of",
+				partSizeBytes, "bytes each")
+		}
+	}
 
 	// now we get to work
 	var info *tar.Header
@@ -97,24 +121,8 @@ func doSplit() {
 		// add the file from the original archive to the new archive
 		tempInfo, _ = newTarFile.Stat()
 		bytesBeforeWrite = tempInfo.Size()
-		err = newTar.WriteHeader(info)
-		fatalIf(err, "failed writing header between tars")
 
-		// write from the reader
-		_, err = io.Copy(newTar, tr)
-		fatalIf(err, "failed writing file body between tars")
-
-		filesProcessed++
-		if filesProcessed%10000 == 0 {
-			fmt.Println("Processed files=", filesProcessed)
-		}
-
-		tempInfo, _ = newTarFile.Stat()
-		bytesAfterWrite = tempInfo.Size()
-
-		byteCounter += bytesAfterWrite - bytesBeforeWrite
-
-		if byteCounter > partSizeBytes {
+		if (bytesBeforeWrite + info.Size > partSizeBytes || byteCounter > partSizeBytes) {
 			byteCounter = 0
 			newTarCounter++
 
@@ -131,6 +139,23 @@ func doSplit() {
 			newTar = tar.NewWriter(newTarFile)
 
 			fmt.Println("Initialized next tar archive", newTarFile.Name())
+		} else {
+			err = newTar.WriteHeader(info)
+			fatalIf(err, "failed writing header between tars")
+
+			// write from the reader
+			_, err = io.Copy(newTar, tr)
+			fatalIf(err, "failed writing file body between tars")
+
+			filesProcessed++
+			if filesProcessed%10000 == 0 {
+				fmt.Println("Processed files=", filesProcessed)
+			}
+
+			tempInfo, _ = newTarFile.Stat()
+			bytesAfterWrite = tempInfo.Size()
+
+			byteCounter += bytesAfterWrite - bytesBeforeWrite
 		}
 	}
 }
