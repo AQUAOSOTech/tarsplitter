@@ -57,20 +57,22 @@ func doSplit() {
 		os.Exit(1)
 	}
 
-	var file io.Reader
+	var file *os.File
+	var err error
 	var partSizeBytes int64
+
+	var size datasize.ByteSize
+	_ = size.UnmarshalText([]byte(*partSize))
+	partSizeBytes = int64(size.Bytes())
+
+	if partSizeBytes == 0 {
+		partSizeBytes = math.MaxInt64
+	}
 
 	if *input == "-" {
 		file = os.Stdin
-		var size datasize.ByteSize
-		_ = size.UnmarshalText([]byte(*partSize))
-		partSizeBytes = int64(size.Bytes())
-
-		if partSizeBytes == 0 {
-			partSizeBytes = math.MaxInt64
-		}
 	} else {
-		file, err := os.Open(*input)
+		file, err = os.Open(*input)
 		fatalIf(err, "Failed statting input", *input)
 		defer file.Close()
 
@@ -78,9 +80,14 @@ func doSplit() {
 		stat, err := file.Stat()
 		fatalIf(err, "Failed statting input", *input)
 
-		partSizeBytes := stat.Size() / *partCount
-		fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into", *partCount, "parts of",
-			partSizeBytes, "bytes")
+		if *partSize == "" {
+			partSizeBytes = stat.Size() / *partCount
+			fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into", *partCount, "parts of",
+				partSizeBytes, "bytes")
+		} else {
+			fmt.Println(stat.Name(), "is", stat.Size(), "bytes, splitting into archives of",
+				partSizeBytes, "bytes each")
+		}
 	}
 
 	// now we get to work
